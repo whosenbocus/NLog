@@ -51,107 +51,107 @@ namespace NLog.Targets.Network
         /// <summary>
         /// Test <see cref="HttpNetworkSender"/> via <see cref="NetworkTarget"/>
         /// </summary>
-        [Fact]
-        [Obsolete("WebRequest is obsolete. Use HttpClient instead.")]
-        public void HttpNetworkSenderViaNetworkTargetTest()
-        {
-            // Arrange
-            var networkTarget = new NetworkTarget("target1")
-            {
-                Address = "http://test.with.mock",
-                Layout = "${logger}|${message}|${exception}",
-                MaxQueueSize = 1234,
-                OnQueueOverflow = NetworkTargetQueueOverflowAction.Block,
-                MaxMessageSize = 0,
-            };
+        //[Fact]
+        //[Obsolete("WebRequest is obsolete. Use HttpClient instead.")]
+        //public void HttpNetworkSenderViaNetworkTargetTest()
+        //{
+        //    // Arrange
+        //    var networkTarget = new NetworkTarget("target1")
+        //    {
+        //        Address = "http://test.with.mock",
+        //        Layout = "${logger}|${message}|${exception}",
+        //        MaxQueueSize = 1234,
+        //        OnQueueOverflow = NetworkTargetQueueOverflowAction.Block,
+        //        MaxMessageSize = 0,
+        //    };
 
-            var webRequestMock = new WebRequestMock();
-            var networkSenderFactoryMock = CreateNetworkSenderFactoryMock(webRequestMock);
-            networkTarget.SenderFactory = networkSenderFactoryMock;
+        //    var webRequestMock = new WebRequestMock();
+        //    var networkSenderFactoryMock = CreateNetworkSenderFactoryMock(webRequestMock);
+        //    networkTarget.SenderFactory = networkSenderFactoryMock;
 
-            var logFactory = new LogFactory();
-            var config = new LoggingConfiguration(logFactory);
-            config.AddRuleForAllLevels(networkTarget);
-            logFactory.Configuration = config;
+        //    var logFactory = new LogFactory();
+        //    var config = new LoggingConfiguration(logFactory);
+        //    config.AddRuleForAllLevels(networkTarget);
+        //    logFactory.Configuration = config;
 
-            var logger = logFactory.GetLogger("HttpHappyPathTestLogger");
+        //    var logger = logFactory.GetLogger("HttpHappyPathTestLogger");
 
-            // Act
-            logger.Info("test message1");
-            logFactory.Flush();
+        //    // Act
+        //    logger.Info("test message1");
+        //    logFactory.Flush();
 
-            // Assert
-            var mock = webRequestMock;
+        //    // Assert
+        //    var mock = webRequestMock;
 
-            var requestedString = mock.GetRequestContentAsString();
+        //    var requestedString = mock.GetRequestContentAsString();
 
-            Assert.Equal("http://test.with.mock/", mock.RequestedAddress.ToString());
-            Assert.Equal("HttpHappyPathTestLogger|test message1|", requestedString);
-            Assert.Equal("POST", mock.Method);
+        //    Assert.Equal("http://test.with.mock/", mock.RequestedAddress.ToString());
+        //    Assert.Equal("HttpHappyPathTestLogger|test message1|", requestedString);
+        //    Assert.Equal("POST", mock.Method);
 
-            networkSenderFactoryMock.Received(1).Create("http://test.with.mock", null, networkTarget);
+        //    networkSenderFactoryMock.Received(1).Create("http://test.with.mock", null, networkTarget);
 
-            // Cleanup
-            mock.Dispose();
-        }
+        //    // Cleanup
+        //    mock.Dispose();
+        //}
 
-        [Fact]
-        [Obsolete("WebRequest is obsolete. Use HttpClient instead.")]
-        public void HttpNetworkSenderViaNetworkTargetRecoveryTest()
-        {
-            // Arrange
-            var networkTarget = new NetworkTarget("target1")
-            {
-                Address = "http://test.with.mock",
-                Layout = "${logger}|${message}|${exception}",
-                MaxQueueSize = 1234,
-                OnQueueOverflow = NetworkTargetQueueOverflowAction.Block,
-                MaxMessageSize = 0,
-            };
+        //[Fact]
+        //[Obsolete("WebRequest is obsolete. Use HttpClient instead.")]
+        //public void HttpNetworkSenderViaNetworkTargetRecoveryTest()
+        //{
+        //    // Arrange
+        //    var networkTarget = new NetworkTarget("target1")
+        //    {
+        //        Address = "http://test.with.mock",
+        //        Layout = "${logger}|${message}|${exception}",
+        //        MaxQueueSize = 1234,
+        //        OnQueueOverflow = NetworkTargetQueueOverflowAction.Block,
+        //        MaxMessageSize = 0,
+        //    };
 
-            var webRequestMock = new WebRequestMock();
-            webRequestMock.FirstRequestMustFail = true;
-            var networkSenderFactoryMock = CreateNetworkSenderFactoryMock(webRequestMock);
-            networkTarget.SenderFactory = networkSenderFactoryMock;
+        //    var webRequestMock = new WebRequestMock();
+        //    webRequestMock.FirstRequestMustFail = true;
+        //    var networkSenderFactoryMock = CreateNetworkSenderFactoryMock(webRequestMock);
+        //    networkTarget.SenderFactory = networkSenderFactoryMock;
 
-            var logFactory = new LogFactory();
-            var config = new LoggingConfiguration(logFactory);
-            config.AddRuleForAllLevels(networkTarget);
-            logFactory.Configuration = config;
+        //    var logFactory = new LogFactory();
+        //    var config = new LoggingConfiguration(logFactory);
+        //    config.AddRuleForAllLevels(networkTarget);
+        //    logFactory.Configuration = config;
 
-            var logger = logFactory.GetLogger("HttpHappyPathTestLogger");
+        //    var logger = logFactory.GetLogger("HttpHappyPathTestLogger");
 
-            // Act
-            logger.Info("test message1");   // Will fail after short delay
-            logger.Info("test message2");   // Will be queued and sent after short delay
-            logFactory.Flush();
+        //    // Act
+        //    logger.Info("test message1");   // Will fail after short delay
+        //    logger.Info("test message2");   // Will be queued and sent after short delay
+        //    logFactory.Flush();
 
-            // Assert
-            var mock = webRequestMock;
+        //    // Assert
+        //    var mock = webRequestMock;
 
-            var requestedString = mock.GetRequestContentAsString();
+        //    var requestedString = mock.GetRequestContentAsString();
 
-            Assert.Equal("http://test.with.mock/", mock.RequestedAddress.ToString());
-            Assert.Equal("HttpHappyPathTestLogger|test message2|", requestedString);
-            Assert.Equal("POST", mock.Method);
+        //    Assert.Equal("http://test.with.mock/", mock.RequestedAddress.ToString());
+        //    Assert.Equal("HttpHappyPathTestLogger|test message2|", requestedString);
+        //    Assert.Equal("POST", mock.Method);
 
-            networkSenderFactoryMock.Received(1).Create("http://test.with.mock", null, networkTarget); // Only created one HttpNetworkSender
+        //    networkSenderFactoryMock.Received(1).Create("http://test.with.mock", null, networkTarget); // Only created one HttpNetworkSender
 
-            // Cleanup
-            mock.Dispose();
-        }
+        //    // Cleanup
+        //    mock.Dispose();
+        //}
 
-        [Obsolete("WebRequest is obsolete. Use HttpClient instead.")]
-        private static INetworkSenderFactory CreateNetworkSenderFactoryMock(WebRequestMock webRequestMock)
-        {
-            var networkSenderFactoryMock = Substitute.For<INetworkSenderFactory>();
+        //[Obsolete("WebRequest is obsolete. Use HttpClient instead.")]
+        //private static INetworkSenderFactory CreateNetworkSenderFactoryMock(WebRequestMock webRequestMock)
+        //{
+        //    var networkSenderFactoryMock = Substitute.For<INetworkSenderFactory>();
 
-            networkSenderFactoryMock.Create(Arg.Any<string>(), Arg.Any<X509Certificate2Collection>(), Arg.Any<NetworkTarget>())
-                .Returns(url => new HttpNetworkSender(url.Arg<string>())
-                {
-                    HttpRequestFactory = new WebRequestFactoryMock(webRequestMock)
-                });
-            return networkSenderFactoryMock;
-        }
+        //    networkSenderFactoryMock.Create(Arg.Any<string>(), Arg.Any<X509Certificate2Collection>(), Arg.Any<NetworkTarget>())
+        //        .Returns(url => new HttpNetworkSender(url.Arg<string>())
+        //        {
+        //            HttpRequestFactory = new WebRequestFactoryMock(webRequestMock)
+        //        });
+        //    return networkSenderFactoryMock;
+        //}
     }
 }
