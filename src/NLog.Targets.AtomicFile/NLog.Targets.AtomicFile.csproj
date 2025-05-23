@@ -55,6 +55,10 @@
     <Title>NLog.Targets.AtomicFile for NET8</Title>
   </PropertyGroup>
 
+	<PropertyGroup Condition=" '$(TargetFramework)' == 'net9.0' ">
+		<Title>NLog.Targets.AtomicFile for NET8</Title>
+	</PropertyGroup>
+
   <ItemGroup Condition=" '$(TargetFramework)' == 'net46' ">
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -85,6 +89,10 @@
   <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
     <PackageReference Include="Mono.Posix.NETStandard" Version="1.0.0" />
   </ItemGroup>
+
+	<ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+		<PackageReference Include="Mono.Posix.NETStandard" Version="1.0.0" />
+	</ItemGroup>
   
   <Target Name="DownloadMissingContent" BeforeTargets="GenerateNuspec">
     <DownloadFile SourceUrl="https://nlog-project.org/N.png" DestinationFolder="$(MSBuildThisFileDirectory)" />
