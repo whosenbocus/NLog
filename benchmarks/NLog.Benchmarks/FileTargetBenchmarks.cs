@@ -55,5 +55,94 @@ namespace NLog.Benchmarks
         {
             fileTarget.PublicWrite(logEvent);
         }
+
+        [Benchmark]
+        public void WriteLogEvent_KeepFileOpenFalse()
+        {
+            var config = new LoggingConfiguration();
+            var target = new PublicFileTarget
+            {
+                FileName = LogFileName,
+                Layout = "${message}",
+                KeepFileOpen = false,
+                AutoFlush = true
+            };
+            config.AddRuleForAllLevels(target);
+            LogManager.Configuration = config;
+            var evt = new LogEventInfo(LogLevel.Info, "BenchmarkLogger", "Test message");
+            target.PublicWrite(evt);
+        }
+
+        [Benchmark]
+        public void WriteLogEvent_AutoFlushFalse()
+        {
+            var config = new LoggingConfiguration();
+            var target = new PublicFileTarget
+            {
+                FileName = LogFileName,
+                Layout = "${message}",
+                KeepFileOpen = true,
+                AutoFlush = false
+            };
+            config.AddRuleForAllLevels(target);
+            LogManager.Configuration = config;
+            var evt = new LogEventInfo(LogLevel.Info, "BenchmarkLogger", "Test message");
+            target.PublicWrite(evt);
+        }
+
+        [Benchmark]
+        public void WriteLogEvent_ReplaceFileContentsOnEachWrite()
+        {
+            var config = new LoggingConfiguration();
+            var target = new PublicFileTarget
+            {
+                FileName = LogFileName,
+                Layout = "${message}",
+                KeepFileOpen = true,
+                AutoFlush = true,
+                ReplaceFileContentsOnEachWrite = true
+            };
+            config.AddRuleForAllLevels(target);
+            LogManager.Configuration = config;
+            var evt = new LogEventInfo(LogLevel.Info, "BenchmarkLogger", "Test message");
+            target.PublicWrite(evt);
+        }
+
+        [Benchmark]
+        public void WriteLogEvent_ComplexLayout()
+        {
+            var config = new LoggingConfiguration();
+            var target = new PublicFileTarget
+            {
+                FileName = LogFileName,
+                Layout = "${longdate}|${level:uppercase=true}|${logger}|${message:withexception=true}",
+                KeepFileOpen = true,
+                AutoFlush = true
+            };
+            config.AddRuleForAllLevels(target);
+            LogManager.Configuration = config;
+            var evt = new LogEventInfo(LogLevel.Info, "BenchmarkLogger", "Test message with more details");
+            target.PublicWrite(evt);
+        }
+
+        [Benchmark]
+        public void WriteLogEvent_Batch()
+        {
+            var config = new LoggingConfiguration();
+            var target = new PublicFileTarget
+            {
+                FileName = LogFileName,
+                Layout = "${message}",
+                KeepFileOpen = true,
+                AutoFlush = true
+            };
+            config.AddRuleForAllLevels(target);
+            LogManager.Configuration = config;
+            var events = new LogEventInfo[100];
+            for (int i = 0; i < events.Length; i++)
+                events[i] = new LogEventInfo(LogLevel.Info, "BenchmarkLogger", $"Batch message {i}");
+            foreach (var evt in events)
+                target.PublicWrite(evt);
+        }
     }
 }
