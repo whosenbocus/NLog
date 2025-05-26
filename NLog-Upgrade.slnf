@@ -1,0 +1,16 @@
+{
+  "solution": {
+    "path": "NLog.sln",
+    "projects": [
+      "benchmarks\\NLog.Benchmarks\\NLog.Benchmarks.csproj",
+      "tests\\NLog.Targets.AtomicFile.Tests\\NLog.Targets.AtomicFile.Tests.csproj",
+      "tests\\NLog.Targets.ConcurrentFile.Tests\\NLog.Targets.ConcurrentFile.Tests.csproj",
+      "tests\\NLog.UnitTests\\NLog.UnitTests.csproj",
+      "tests\\TestTrimPublish\\TestTrimPublish.csproj",
+      "src\\NLog.OutputDebugString\\NLog.OutputDebugString.csproj",
+      "src\\NLog.Targets.AtomicFile\\NLog.Targets.AtomicFile.csproj",
+      "src\\NLog.Targets.ConcurrentFile\\NLog.Targets.ConcurrentFile.csproj",
+      "src\\NLog\\NLog.csproj"
+    ]
+  }
+}
