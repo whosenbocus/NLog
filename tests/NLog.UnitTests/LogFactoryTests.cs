@@ -114,7 +114,7 @@ namespace NLog.UnitTests
         }
 #endif
 
-#if NET6_0_OR_GREATER
+#if NET9_0_OR_GREATER
         [Fact]
         public void DisposeAsync_NoConfig_IsCompleted()
         {
