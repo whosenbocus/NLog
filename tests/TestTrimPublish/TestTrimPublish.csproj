@@ -20,6 +20,7 @@
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
     <PublishAot>true</PublishAot>
     <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <TargetFramework>net9.0</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
