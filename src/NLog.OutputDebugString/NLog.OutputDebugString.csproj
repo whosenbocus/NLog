@@ -36,6 +36,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnableTrimAnalyzer Condition=" '$(TargetFramework)' == 'netstandard2.1' ">true</EnableTrimAnalyzer>
     <IsTrimmable Condition=" '$(TargetFramework)' == 'netstandard2.1' ">true</IsTrimmable>
+    <TargetFrameworks>net35;net46;netstandard2.0;net9.0</TargetFrameworks>
   </PropertyGroup>
 
   <PropertyGroup Condition=" '$(TargetFramework)' == 'netstandard2.1' ">
@@ -62,7 +63,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>
