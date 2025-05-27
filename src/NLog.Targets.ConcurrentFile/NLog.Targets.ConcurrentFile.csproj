@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net35;net46;netstandard2.0</TargetFrameworks>
+    <TargetFrameworks>net35;net46;netstandard2.0;net9.0</TargetFrameworks>
 
     <Title>NLog.Targets.ConcurrentFile</Title>
     <Company>NLog</Company>
@@ -75,7 +75,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>
