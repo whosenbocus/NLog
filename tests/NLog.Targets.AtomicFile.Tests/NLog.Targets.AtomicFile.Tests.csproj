@@ -16,6 +16,7 @@
     <SonarQubeExclude>true</SonarQubeExclude>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <TargetFrameworks>net462;net9.0</TargetFrameworks>
   </PropertyGroup>
 
   <ItemGroup>
