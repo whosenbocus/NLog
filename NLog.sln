@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.33627.172
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NLog", "NLog\NLog.csproj", "{A0BFF0DB-ED9A-4639-AE86-8E709A1EFC66}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NLog", "src\NLog\NLog.csproj", "{A0BFF0DB-ED9A-4639-AE86-8E709A1EFC66}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NLog.UnitTests", "tests\NLog.UnitTests\NLog.UnitTests.csproj", "{0218D315-383E-4B09-BE73-FB62320FCA4C}"
 EndProject
