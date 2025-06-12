@@ -473,6 +473,7 @@ namespace NLog.UnitTests
                 "NLog.Targets.DefaultJsonSerializer",
                 "NLog.Targets.FileTarget",
                 "NLog.Targets.LineEndingMode",
+                "NLog.Targets.FileNameBuilder",
                 "NLog.Targets.FileArchiveHandlers.DisabledFileArchiveHandler",
                 "NLog.MessageTemplates.MessageTemplateParameters",
                 "NLog.MessageTemplates.TemplateEnumerator",

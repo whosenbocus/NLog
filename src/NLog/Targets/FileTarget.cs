@@ -10,7 +10,7 @@
 // * Redistributions of source code must retain the above copyright notice,
 //   this list of conditions and the following disclaimer.
 //
-// * Redistributions in binary form must reproduce the above copyright notice,
+// * Redistributions in binary form must retain the above copyright notice,
 //   this list of conditions and the following disclaimer in the documentation
 //   and/or other materials provided with the distribution.
 //
@@ -456,7 +456,7 @@ namespace NLog.Targets
         private IFileArchiveHandler FileAchiveHandler => _fileArchiveHandler ?? (_fileArchiveHandler = CreateFileArchiveHandler());
         private IFileArchiveHandler? _fileArchiveHandler;
 
-        struct OpenFileAppender
+        internal struct OpenFileAppender
         {
             public IFileAppender FileAppender { get; }
             public int SequenceNumber { get; }
@@ -476,10 +476,13 @@ namespace NLog.Targets
 
         private readonly SortHelpers.KeySelector<AsyncLogEventInfo, string> _getFileNameFromLayout;
 
-        private DateTime _lastWriteTime;
+        internal DateTime _lastWriteTime;
         private Timer? _openFileMonitorTimer;
 
         private string _lastFileNameFromLayout = string.Empty;
+
+        private FileNameBuilder _fileNameBuilder;
+        private FileWriter _fileWriter;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="FileTarget" /> class.
@@ -490,6 +493,18 @@ namespace NLog.Targets
         public FileTarget()
         {
             _getFileNameFromLayout = l => GetFileNameFromLayout(l.LogEvent);
+            _fileNameBuilder = new FileNameBuilder(this);
+            _fileWriter = new FileWriter(
+                this,
+                _fileNameBuilder,
+                _openFileCache,
+                CloseFile,
+                CloseFileWithFooter,
+                OpenFile,
+                RollArchiveFile,
+                FileTarget.MustArchiveFile,
+                (openFile, bytes) => { openFile.FileAppender.Write(bytes.Array, bytes.Offset, bytes.Count); if (AutoFlush) openFile.FileAppender.Flush(); return true; }
+            );
         }
 
         /// <summary>
@@ -705,65 +720,12 @@ namespace NLog.Targets
 
         private void WriteToFile(string filename, LogEventInfo firstLogEvent, MemoryStream ms, out Exception? lastException)
         {
-            try
-            {
-                ArraySegment<byte> bytes = new ArraySegment<byte>(ms.GetBuffer(), 0, (int)ms.Length);
-                WriteBytesToFile(filename, firstLogEvent, bytes);
-                lastException = null;
-            }
-            catch (Exception ex)
-            {
-                InternalLogger.Error(ex, "{0}: Failed writing to FileName: '{1}'", this, filename);
-                if (ExceptionMustBeRethrown(ex))
-                    throw;
-
-                lastException = ex;
-            }
+            lastException = _fileWriter.WriteToFile(filename, firstLogEvent, ms);
         }
 
         private void WriteBytesToFile(string filename, LogEventInfo firstLogEvent, ArraySegment<byte> bytes)
         {
-            bool hasWritten = true;
-            if (!_openFileCache.TryGetValue(filename, out var openFile))
-            {
-                hasWritten = false;
-                openFile = OpenFile(filename, firstLogEvent, null);
-            }
-
-            try
-            {
-                openFile = HandleArchivingIfNeeded(filename, openFile, firstLogEvent, hasWritten);
-                WriteBytesAndFlush(openFile, bytes);
-            }
-            catch
-            {
-                // Close file (any retry-logic must happen inside the FileStream-implementation)
-                _openFileCache.Remove(filename);
-                openFile.FileAppender.Dispose();
-                throw;
-            }
-            finally
-            {
-                _lastWriteTime = firstLogEvent.TimeStamp;
-            }
-        }
-
-        private OpenFileAppender HandleArchivingIfNeeded(string filename, OpenFileAppender openFile, LogEventInfo firstLogEvent, bool hasWritten)
-        {
-            if (ArchiveAboveSize != 0 || ArchiveEvery != FileArchivePeriod.None)
-            {
-                return RollArchiveFile(filename, openFile, firstLogEvent, hasWritten);
-            }
-            return openFile;
-        }
-
-        private void WriteBytesAndFlush(OpenFileAppender openFile, ArraySegment<byte> bytes)
-        {
-            openFile.FileAppender.Write(bytes.Array, bytes.Offset, bytes.Count);
-            if (AutoFlush)
-            {
-                openFile.FileAppender.Flush();
-            }
+            _fileWriter.WriteBytesToFile(filename, firstLogEvent, bytes);
         }
 
         private OpenFileAppender RollArchiveFile(string filename, OpenFileAppender openFile, LogEventInfo firstLogEvent, bool hasWritten)
@@ -772,7 +734,7 @@ namespace NLog.Targets
 
             bool skipFileLastModified = ArchiveFileName is null;
 
-            while (lastSequenceNo != openFile.SequenceNumber && MustArchiveFile(openFile.FileAppender, firstLogEvent))
+            while (lastSequenceNo != openFile.SequenceNumber && MustArchiveFile(this, openFile.FileAppender, firstLogEvent))
             {
                 lastSequenceNo = openFile.SequenceNumber;
 
@@ -793,34 +755,34 @@ namespace NLog.Targets
             return openFile;
         }
 
-        private bool MustArchiveFile(IFileAppender fileAppender, LogEventInfo firstLogEvent)
+        internal static bool MustArchiveFile(FileTarget target, IFileAppender fileAppender, LogEventInfo firstLogEvent)
         {
-            if (ArchiveAboveSize != 0 && MustArchiveBySize(fileAppender))
+            if (target.ArchiveAboveSize != 0 && MustArchiveBySize(target, fileAppender))
                 return true;
 
-            if (ArchiveEvery != FileArchivePeriod.None && MustArchiveEveryTimePeriod(fileAppender, firstLogEvent))
+            if (target.ArchiveEvery != FileArchivePeriod.None && MustArchiveEveryTimePeriod(target, fileAppender, firstLogEvent))
                 return true;
 
             return false;
         }
 
-        private bool MustArchiveBySize(IFileAppender fileAppender)
+        private static bool MustArchiveBySize(FileTarget target, IFileAppender fileAppender)
         {
             var currentFileSize = fileAppender.FileSize;
-            if (currentFileSize == 0 || currentFileSize + 1 < ArchiveAboveSize)
+            if (currentFileSize == 0 || currentFileSize + 1 < target.ArchiveAboveSize)
                 return false;
 
-            InternalLogger.Debug("{0}: Archive because of filesize={1} of file: {2}", this, currentFileSize, fileAppender.FilePath);
+            InternalLogger.Debug("{0}: Archive because of filesize={1} of file: {2}", target, currentFileSize, fileAppender.FilePath);
             return true;
         }
 
-        private bool MustArchiveEveryTimePeriod(IFileAppender fileAppender, LogEventInfo firstLogEvent)
+        private static bool MustArchiveEveryTimePeriod(FileTarget target, IFileAppender fileAppender, LogEventInfo firstLogEvent)
         {
             var nextArchiveTime = fileAppender.NextArchiveTime;
             if (nextArchiveTime >= firstLogEvent.TimeStamp)
                 return false;
 
-            InternalLogger.Debug("{0}: Archive because of filetime of file: {1}", this, fileAppender.FilePath);
+            InternalLogger.Debug("{0}: Archive because of filetime of file: {1}", target, fileAppender.FilePath);
             return true;
         }
 
@@ -869,7 +831,7 @@ namespace NLog.Targets
             PruneOpenFileCache();
 
             sequenceNumber = FileAchiveHandler.ArchiveBeforeOpenFile(filename, firstLogEvent, previousFileLastModified, sequenceNumber);
-            var fullFilePath = BuildFullFilePath(filename, sequenceNumber);
+            var fullFilePath = _fileNameBuilder.BuildFullFilePath(filename, sequenceNumber);
 
             if (createDirs)
             {
@@ -1092,64 +1054,13 @@ namespace NLog.Targets
 
         internal string BuildFullFilePath(string newFileName, int sequenceNumber, DateTime fileLastModified = default)
         {
-            if (sequenceNumber > 0 || fileLastModified != default)
-            {
-                var fileName = Path.GetFileName(newFileName) ?? string.Empty;
-                var fileExt = Path.GetExtension(fileName) ?? string.Empty;
-                newFileName = newFileName.Substring(0, newFileName.Length - fileName.Length);
-                if (!string.IsNullOrEmpty(fileExt))
-                    fileName = fileName.Substring(0, fileName.Length - fileExt.Length);
-
-                object fileLastModifiedObj = fileLastModified == default ? string.Empty : (object)fileLastModified;
-                try
-                {
-                    newFileName = newFileName + fileName + string.Format(ArchiveSuffixFormat, sequenceNumber, fileLastModifiedObj) + fileExt;
-                }
-                catch (Exception ex)
-                {
-                    InternalLogger.Error(ex, "{0}: Failed to apply ArchiveSuffixFormat={1} using SequenceNumber={2} for file: '{3}'", this, ArchiveSuffixFormat, sequenceNumber, newFileName);
-                    if (ExceptionMustBeRethrown(ex))
-                        throw;
-                    newFileName = newFileName + fileName + string.Format(_legacySequenceArchiveSuffixFormat, sequenceNumber) + fileExt;
-                }
-            }
-
-            var filepath = CleanFullFilePath(newFileName);
-            return filepath;
+            return _fileNameBuilder.BuildFullFilePath(newFileName, sequenceNumber, fileLastModified);
         }
 
         internal static string CleanFullFilePath(string filename)
         {
-            var lastDirSeparator = filename.LastIndexOfAny(DirectorySeparatorChars);
-
-            char[]? fileNameChars = null;    // defer char[] memory-allocation until detecting invalid char
-
-            for (int i = lastDirSeparator + 1; i < filename.Length; i++)
-            {
-                if (InvalidFileNameChars.Contains(filename[i]))
-                {
-                    if (fileNameChars is null)
-                    {
-                        fileNameChars = filename.Substring(lastDirSeparator + 1).ToCharArray();
-                    }
-                    fileNameChars[i - (lastDirSeparator + 1)] = '_';
-                }
-            }
-
-            //only if an invalid char was replaced do we create a new string.
-            if (fileNameChars != null)
-            {
-                //keep the / in the dirname, because dirname could be c:/ and combine of c: and file name won't work well.
-                var dirName = lastDirSeparator > 0 ? filename.Substring(0, lastDirSeparator + 1) : string.Empty;
-                filename = Path.Combine(dirName, new string(fileNameChars));
-            }
-
-            var filepath = FileInfoHelper.IsRelativeFilePath(filename) ? Path.Combine(AppEnvironmentWrapper.FixFilePathWithLongUNC(LogManager.LogFactory.CurrentAppEnvironment.AppDomainBaseDirectory), filename) : filename;
-            filepath = Path.GetFullPath(filepath);
-            return filepath;
+            return new FileNameBuilder(null).CleanFullFilePath(filename);
         }
-        private static readonly char[] DirectorySeparatorChars = new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar };
-        private static readonly HashSet<char> InvalidFileNameChars = new HashSet<char>(Path.GetInvalidFileNameChars());
 
         private static bool InitialValueBom(Encoding encoding)
         {
