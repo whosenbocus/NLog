@@ -483,6 +483,7 @@ namespace NLog.Targets
 
         private FileNameBuilder _fileNameBuilder;
         private FileWriter _fileWriter;
+        private OpenFileCacheManager _openFileCacheManager;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="FileTarget" /> class.
@@ -504,6 +505,22 @@ namespace NLog.Targets
                 RollArchiveFile,
                 FileTarget.MustArchiveFile,
                 (openFile, bytes) => { openFile.FileAppender.Write(bytes.Array, bytes.Offset, bytes.Count); if (AutoFlush) openFile.FileAppender.Flush(); return true; }
+            );
+
+            _openFileCacheManager = new OpenFileCacheManager(
+                _openFileCache,
+                OpenFileCacheSize,
+                CloseFileWithFooter,
+                CloseFile,
+                _openFileMonitorTimer,
+                SyncRoot,
+                () => OpenFileMonitorTimerInterval,
+                () => OpenFileCacheTimeout,
+                () => OpenFileFlushTimeout,
+                () => AutoFlush,
+                () => Time.TimeSource.Current.Time,
+                () => _lastWriteTime,
+                openFile => openFile.FileAppender.Flush()
             );
         }
 
@@ -828,7 +845,7 @@ namespace NLog.Targets
         {
             bool createDirs = sequenceNumber == 0 && CreateDirs && _openFileCache.Count == 0;
 
-            PruneOpenFileCache();
+            _openFileCacheManager.PruneOpenFileCache();
 
             sequenceNumber = FileAchiveHandler.ArchiveBeforeOpenFile(filename, firstLogEvent, previousFileLastModified, sequenceNumber);
             var fullFilePath = _fileNameBuilder.BuildFullFilePath(filename, sequenceNumber);
@@ -861,53 +878,6 @@ namespace NLog.Targets
             if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
             {
                 Directory.CreateDirectory(directory);
-            }
-        }
-
-        private void PruneOpenFileCache()
-        {
-            RemoveDeletedFilesFromCache();
-            RemoveOldestFilesIfCacheFull();
-        }
-
-        private void RemoveDeletedFilesFromCache()
-        {
-            while (_openFileCache.Count > 0)
-            {
-                KeyValuePair<string, OpenFileAppender> openFileDeleted = default;
-                foreach (var openFile in _openFileCache)
-                {
-                    if (!openFile.Value.FileAppender.VerifyFileExists())
-                    {
-                        openFileDeleted = openFile;
-                        break;
-                    }
-                }
-
-                if (string.IsNullOrEmpty(openFileDeleted.Key))
-                    break;
-
-                CloseFile(openFileDeleted.Key, openFileDeleted.Value);
-            }
-        }
-
-        private void RemoveOldestFilesIfCacheFull()
-        {
-            while (_openFileCache.Count >= OpenFileCacheSize)
-            {
-                DateTime oldestFileTime = DateTime.MaxValue;
-                KeyValuePair<string, OpenFileAppender> oldestOpenFile = default;
-                foreach (var oldOpenFile in _openFileCache)
-                {
-                    if (oldOpenFile.Value.FileAppender.OpenStreamTime < oldestFileTime)
-                    {
-                        oldestOpenFile = oldOpenFile;
-                    }
-                }
-                if (!string.IsNullOrEmpty(oldestOpenFile.Key))
-                    break;
-
-                CloseFileWithFooter(oldestOpenFile.Key, oldestOpenFile.Value, false);
             }
         }
 
@@ -992,12 +962,12 @@ namespace NLog.Targets
 
                     if (OpenFileCacheTimeout > 0)
                     {
-                        PruneOpenFileCacheUsingTimeout();
+                        _openFileCacheManager.PruneOpenFileCacheUsingTimeout();
                     }
 
                     if (OpenFileFlushTimeout > 0 && !AutoFlush)
                     {
-                        FlushOpenFilesIfNeeded();
+                        _openFileCacheManager.FlushOpenFilesIfNeeded();
                     }
 
                     startTimer = startTimer && _openFileCache.Count != 0;
@@ -1011,44 +981,6 @@ namespace NLog.Targets
             {
                 if (startTimer)
                     _openFileMonitorTimer?.Change(OpenFileMonitorTimerInterval * 1000, Timeout.Infinite);
-            }
-        }
-
-        private void PruneOpenFileCacheUsingTimeout()
-        {
-            DateTime closeTime = Time.TimeSource.Current.Time.AddSeconds(-OpenFileCacheTimeout);
-            bool oldFilesMustBeClosed = false;
-
-            foreach (var openFile in _openFileCache)
-            {
-                if (openFile.Value.FileAppender.OpenStreamTime < closeTime)
-                {
-                    oldFilesMustBeClosed = true;
-                    break;
-                }
-            }
-
-            if (oldFilesMustBeClosed)
-            {
-                foreach (var openFile in _openFileCache.ToList())
-                {
-                    if (openFile.Value.FileAppender.OpenStreamTime < closeTime)
-                    {
-                        CloseFile(openFile.Key, openFile.Value);
-                    }
-                }
-            }
-        }
-
-        private void FlushOpenFilesIfNeeded()
-        {
-            DateTime flushTime = Time.TimeSource.Current.Time.AddSeconds(-(OpenFileFlushTimeout + 1) * 1.5);
-            if (_lastWriteTime > flushTime)
-            {
-                foreach (var openFile in _openFileCache)
-                {
-                    openFile.Value.FileAppender.Flush();
-                }
             }
         }
 
