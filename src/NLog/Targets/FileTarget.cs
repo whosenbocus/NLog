@@ -479,6 +479,8 @@ namespace NLog.Targets
         private DateTime _lastWriteTime;
         private Timer? _openFileMonitorTimer;
 
+        private string _lastFileNameFromLayout = string.Empty;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="FileTarget" /> class.
         /// </summary>
@@ -500,6 +502,43 @@ namespace NLog.Targets
         public FileTarget(string name) : this()
         {
             Name = name;
+        }
+
+        // Helper method for getting file name from layout (moved from below for order)
+        private string GetFileNameFromLayout(LogEventInfo logEvent)
+        {
+            if (_fixedFileName != null)
+                return _fixedFileName;
+
+            var lastFileNameFromLayout = _lastFileNameFromLayout;
+            using (var targetBuilder = ReusableLayoutBuilder.Allocate())
+            {
+                FileName.Render(logEvent, targetBuilder.Result);
+                if (targetBuilder.Result.EqualTo(lastFileNameFromLayout))
+                    return _lastFileNameFromLayout;
+
+                lastFileNameFromLayout = targetBuilder.Result.ToString();
+            }
+            _lastFileNameFromLayout = lastFileNameFromLayout;
+            return lastFileNameFromLayout;
+        }
+
+        // Helper method for rendering formatted message to stream (moved from below for order)
+        private void RenderFormattedMessageToStream(LogEventInfo logEvent, StringBuilder formatBuilder, char[] transformBuffer, MemoryStream streamTarget)
+        {
+            this.RenderFormattedMessage(logEvent, formatBuilder);
+            formatBuilder.Append(LineEnding.NewLineCharacters);
+            formatBuilder.CopyToStream(streamTarget, Encoding, transformBuffer);
+        }
+
+        /// <summary>
+        /// Formats the log event for write.
+        /// </summary>
+        /// <param name="logEvent">The log event to be formatted.</param>
+        /// <param name="target"><see cref="StringBuilder"/> for the result.</param>
+        protected virtual void RenderFormattedMessage(LogEventInfo logEvent, StringBuilder target)
+        {
+            Layout.Render(logEvent, target);
         }
 
         /// <summary>
@@ -599,60 +638,44 @@ namespace NLog.Targets
 
                 foreach (var bucket in buckets)
                 {
-                    int bucketCount = bucket.Value.Count;
-                    if (bucketCount <= 0)
-                        continue;
-
-                    string filename = bucket.Key;
-                    if (string.IsNullOrEmpty(filename))
-                    {
-                        InternalLogger.Warn("{0}: FileName Layout returned empty string. The path is not of a legal form.", this);
-                        var emptyPathException = new ArgumentException("The path is not of a legal form.");
-                        for (int i = 0; i < bucketCount; ++i)
-                        {
-                            bucket.Value[i].Continuation(emptyPathException);
-                        }
-                        continue;
-                    }
-
-                    int currentIndex = 0;
-                    while (currentIndex < bucketCount)
-                    {
-                        ms.Position = 0;
-                        ms.SetLength(0);
-
-                        var written = WriteToMemoryStream(bucket.Value, currentIndex, ms);
-                        WriteToFile(filename, bucket.Value[currentIndex].LogEvent, ms, out var lastException);
-                        for (int i = 0; i < written; ++i)
-                        {
-                            bucket.Value[currentIndex++].Continuation(lastException);
-                        }
-                    }
+                    ProcessLogEventBucket(bucket.Key, bucket.Value, ms);
                 }
             }
         }
 
-        private string GetFileNameFromLayout(LogEventInfo logEvent)
+        private void ProcessLogEventBucket(string filename, IList<AsyncLogEventInfo> events, MemoryStream ms)
         {
-            if (_fixedFileName != null)
-                return _fixedFileName;
+            int bucketCount = events.Count;
+            if (bucketCount <= 0)
+                return;
 
-            var lastFileNameFromLayout = _lastFileNameFromLayout;
-            using (var targetBuilder = ReusableLayoutBuilder.Allocate())
+            if (string.IsNullOrEmpty(filename))
             {
-                FileName.Render(logEvent, targetBuilder.Result);
-                if (targetBuilder.Result.EqualTo(lastFileNameFromLayout))
-                    return _lastFileNameFromLayout;
-
-                lastFileNameFromLayout = targetBuilder.Result.ToString();
+                InternalLogger.Warn("{0}: FileName Layout returned empty string. The path is not of a legal form.", this);
+                var emptyPathException = new ArgumentException("The path is not of a legal form.");
+                for (int i = 0; i < bucketCount; ++i)
+                {
+                    events[i].Continuation(emptyPathException);
+                }
+                return;
             }
-            _lastFileNameFromLayout = lastFileNameFromLayout;
-            return lastFileNameFromLayout;
+
+            int currentIndex = 0;
+            while (currentIndex < bucketCount)
+            {
+                ms.Position = 0;
+                ms.SetLength(0);
+
+                var written = WriteEventsChunkToMemoryStream(events, currentIndex, ms);
+                WriteToFile(filename, events[currentIndex].LogEvent, ms, out var lastException);
+                for (int i = 0; i < written; ++i)
+                {
+                    events[currentIndex++].Continuation(lastException);
+                }
+            }
         }
 
-        private string _lastFileNameFromLayout = string.Empty;
-
-        private int WriteToMemoryStream(IList<AsyncLogEventInfo> logEvents, int startIndex, MemoryStream ms)
+        private int WriteEventsChunkToMemoryStream(IList<AsyncLogEventInfo> logEvents, int startIndex, MemoryStream ms)
         {
             long maxBufferSize = BufferSize * 100;   // Max Buffer Default = 30 KiloByte * 100 = 3 MegaByte
 
@@ -660,20 +683,9 @@ namespace NLog.Targets
             using (var targetBuilder = ReusableLayoutBuilder.Allocate())
             using (var targetBuffer = _reusableEncodingBuffer.Allocate())
             {
-                var formatBuilder = targetBuilder.Result;
-                var transformBuffer = targetBuffer.Result;
-                var encodingStream = targetStream.Result;
-
                 for (int i = startIndex; i < logEvents.Count; ++i)
                 {
-                    // For some CPU's then it is faster to write to a small MemoryStream, and then copy to the larger one
-                    encodingStream.Position = 0;
-                    encodingStream.SetLength(0);
-                    formatBuilder.ClearBuilder();
-
-                    AsyncLogEventInfo ev = logEvents[i];
-                    RenderFormattedMessageToStream(ev.LogEvent, formatBuilder, transformBuffer, encodingStream);
-                    ms.Write(encodingStream.GetBuffer(), 0, (int)encodingStream.Length);
+                    WriteSingleEventToStream(logEvents[i], targetBuilder.Result, targetBuffer.Result, targetStream.Result, ms);
                     if (ms.Length > maxBufferSize && !ReplaceFileContentsOnEachWrite)
                         return i - startIndex + 1;  // Max Chunk Size Limit to avoid out-of-memory issues
                 }
@@ -682,21 +694,13 @@ namespace NLog.Targets
             return logEvents.Count - startIndex;
         }
 
-        private void RenderFormattedMessageToStream(LogEventInfo logEvent, StringBuilder formatBuilder, char[] transformBuffer, MemoryStream streamTarget)
+        private void WriteSingleEventToStream(AsyncLogEventInfo ev, StringBuilder formatBuilder, char[] transformBuffer, MemoryStream encodingStream, MemoryStream ms)
         {
-            RenderFormattedMessage(logEvent, formatBuilder);
-            formatBuilder.Append(LineEnding.NewLineCharacters);
-            formatBuilder.CopyToStream(streamTarget, Encoding, transformBuffer);
-        }
-
-        /// <summary>
-        /// Formats the log event for write.
-        /// </summary>
-        /// <param name="logEvent">The log event to be formatted.</param>
-        /// <param name="target"><see cref="StringBuilder"/> for the result.</param>
-        protected virtual void RenderFormattedMessage(LogEventInfo logEvent, StringBuilder target)
-        {
-            Layout.Render(logEvent, target);
+            encodingStream.Position = 0;
+            encodingStream.SetLength(0);
+            formatBuilder.ClearBuilder();
+            RenderFormattedMessageToStream(ev.LogEvent, formatBuilder, transformBuffer, encodingStream);
+            ms.Write(encodingStream.GetBuffer(), 0, (int)encodingStream.Length);
         }
 
         private void WriteToFile(string filename, LogEventInfo firstLogEvent, MemoryStream ms, out Exception? lastException)
@@ -728,17 +732,8 @@ namespace NLog.Targets
 
             try
             {
-                if (ArchiveAboveSize != 0 || ArchiveEvery != FileArchivePeriod.None)
-                {
-                    openFile = RollArchiveFile(filename, openFile, firstLogEvent, hasWritten);
-                }
-
-                openFile.FileAppender.Write(bytes.Array, bytes.Offset, bytes.Count);
-
-                if (AutoFlush)
-                {
-                    openFile.FileAppender.Flush();
-                }
+                openFile = HandleArchivingIfNeeded(filename, openFile, firstLogEvent, hasWritten);
+                WriteBytesAndFlush(openFile, bytes);
             }
             catch
             {
@@ -750,6 +745,24 @@ namespace NLog.Targets
             finally
             {
                 _lastWriteTime = firstLogEvent.TimeStamp;
+            }
+        }
+
+        private OpenFileAppender HandleArchivingIfNeeded(string filename, OpenFileAppender openFile, LogEventInfo firstLogEvent, bool hasWritten)
+        {
+            if (ArchiveAboveSize != 0 || ArchiveEvery != FileArchivePeriod.None)
+            {
+                return RollArchiveFile(filename, openFile, firstLogEvent, hasWritten);
+            }
+            return openFile;
+        }
+
+        private void WriteBytesAndFlush(OpenFileAppender openFile, ArraySegment<byte> bytes)
+        {
+            openFile.FileAppender.Write(bytes.Array, bytes.Offset, bytes.Count);
+            if (AutoFlush)
+            {
+                openFile.FileAppender.Flush();
             }
         }
 
@@ -860,13 +873,7 @@ namespace NLog.Targets
 
             if (createDirs)
             {
-                InternalLogger.Debug("{0}: Verify directory and creating writer to file: {1}", this, fullFilePath);
-
-                var directory = Path.GetDirectoryName(fullFilePath);
-                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-                {
-                    Directory.CreateDirectory(directory);
-                }
+                EnsureDirectoryExists(fullFilePath);
             }
             else
             {
@@ -885,11 +892,26 @@ namespace NLog.Targets
             return openFile;
         }
 
+        private void EnsureDirectoryExists(string fullFilePath)
+        {
+            InternalLogger.Debug("{0}: Verify directory and creating writer to file: {1}", this, fullFilePath);
+            var directory = Path.GetDirectoryName(fullFilePath);
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+        }
+
         private void PruneOpenFileCache()
+        {
+            RemoveDeletedFilesFromCache();
+            RemoveOldestFilesIfCacheFull();
+        }
+
+        private void RemoveDeletedFilesFromCache()
         {
             while (_openFileCache.Count > 0)
             {
-                // Close files if the filepath no longer exists (without writing footer)
                 KeyValuePair<string, OpenFileAppender> openFileDeleted = default;
                 foreach (var openFile in _openFileCache)
                 {
@@ -905,10 +927,12 @@ namespace NLog.Targets
 
                 CloseFile(openFileDeleted.Key, openFileDeleted.Value);
             }
+        }
 
+        private void RemoveOldestFilesIfCacheFull()
+        {
             while (_openFileCache.Count >= OpenFileCacheSize)
             {
-                // Close the oldest filestream (not the least recently used)
                 DateTime oldestFileTime = DateTime.MaxValue;
                 KeyValuePair<string, OpenFileAppender> oldestOpenFile = default;
                 foreach (var oldOpenFile in _openFileCache)
@@ -1011,15 +1035,7 @@ namespace NLog.Targets
 
                     if (OpenFileFlushTimeout > 0 && !AutoFlush)
                     {
-                        DateTime flushTime = Time.TimeSource.Current.Time.AddSeconds(-(OpenFileFlushTimeout + 1) * 1.5);
-                        if (_lastWriteTime > flushTime)
-                        {
-                            // Only Flush when something has been written
-                            foreach (var openFile in _openFileCache)
-                            {
-                                openFile.Value.FileAppender.Flush();
-                            }
-                        }
+                        FlushOpenFilesIfNeeded();
                     }
 
                     startTimer = startTimer && _openFileCache.Count != 0;
@@ -1058,6 +1074,18 @@ namespace NLog.Targets
                     {
                         CloseFile(openFile.Key, openFile.Value);
                     }
+                }
+            }
+        }
+
+        private void FlushOpenFilesIfNeeded()
+        {
+            DateTime flushTime = Time.TimeSource.Current.Time.AddSeconds(-(OpenFileFlushTimeout + 1) * 1.5);
+            if (_lastWriteTime > flushTime)
+            {
+                foreach (var openFile in _openFileCache)
+                {
+                    openFile.Value.FileAppender.Flush();
                 }
             }
         }
